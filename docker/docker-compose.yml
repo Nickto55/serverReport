@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: serverreport-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-serverreport}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-serverreport_pass}
+      POSTGRES_DB: ${DB_NAME:-serverreport}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - serverreport-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-serverreport}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  website:
+    build:
+      context: ../website
+      dockerfile: Dockerfile
+    container_name: serverreport-website
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-serverreport}:${DB_PASSWORD:-serverreport_pass}@postgres:5432/${DB_NAME:-serverreport}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+    ports:
+      - "${WEBSITE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - serverreport-network
+    volumes:
+      - ../website:/app
+      - /app/node_modules
+
+  discord-bot:
+    build:
+      context: ../discord-bot
+      dockerfile: Dockerfile
+    container_name: serverreport-discord-bot
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DATABASE_URL: postgresql://${DB_USER:-serverreport}:${DB_PASSWORD:-serverreport_pass}@postgres:5432/${DB_NAME:-serverreport}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - serverreport-network
+    volumes:
+      - ../discord-bot:/app
+      - /app/node_modules
+
+  telegram-bot:
+    build:
+      context: ../telegram-bot
+      dockerfile: Dockerfile
+    container_name: serverreport-telegram-bot
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgresql://${DB_USER:-serverreport}:${DB_PASSWORD:-serverreport_pass}@postgres:5432/${DB_NAME:-serverreport}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - serverreport-network
+    volumes:
+      - ../telegram-bot:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+
+networks:
+  serverreport-network:
+    driver: bridge
