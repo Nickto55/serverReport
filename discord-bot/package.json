@@ -1,0 +1,19 @@
+{
+  "name": "serverreport-discord-bot",
+  "version": "1.0.0",
+  "description": "ServerReport Discord Bot - Report management via Discord",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.0",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
