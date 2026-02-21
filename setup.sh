@@ -157,7 +157,7 @@ install_dependencies() {
         nano \
         vim \
         net-tools \
-        netcat \
+        netcat-openbsd \
         postgresql-client
     
     print_success "System dependencies installed"
