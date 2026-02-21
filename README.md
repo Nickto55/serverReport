@@ -37,7 +37,28 @@ A comprehensive reporting system with website, Discord bot, and Telegram bot int
 - Node.js 18+ (for local development)
 - PostgreSQL credentials
 
-### Installation
+### Automatic Installation (Recommended)
+
+**Linux/macOS:**
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+**Windows:**
+```batch
+setup.bat
+```
+
+The setup script will:
+- ✅ Check all dependencies
+- ✅ Configure environment variables
+- ✅ Ask for Discord and Telegram tokens
+- ✅ Build Docker images
+- ✅ Start all services
+- ✅ Verify service health
+
+### Manual Installation
 
 1. Clone the repository
 ```bash
@@ -67,6 +88,30 @@ docker-compose up -d
 The application will be available at:
 - Website: http://localhost:3000
 - Database: localhost:5432
+
+### Management Commands
+
+Use the management script for common operations:
+
+**Linux/macOS:**
+```bash
+./manage.sh start          # Start services
+./manage.sh stop           # Stop services
+./manage.sh logs           # View logs
+./manage.sh health-check   # Check service health
+./manage.sh backup-db      # Backup database
+./manage.sh db-shell       # Access PostgreSQL
+```
+
+**Windows:**
+```batch
+manage.bat start
+manage.bat stop
+manage.bat logs
+manage.bat health-check
+manage.bat backup-db
+manage.bat db-shell
+```
 
 ## 📁 Project Structure
 
@@ -160,6 +205,21 @@ npm run dev  # in each directory
 - Check bot has required permissions
 - Ensure tokens are set in environment variables
 
+## � Documentation
+
+Complete documentation available:
+
+- **[INSTALLATION.md](INSTALLATION.md)** - Detailed installation guide
+- **[QUICK_START.md](QUICK_START.md)** - Quick commands reference
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Local development setup
+- **[API_REFERENCE.md](API_REFERENCE.md)** - Complete API documentation
+- **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - Project architecture and features
+
+## 🛠️ Helper Scripts
+
+- **setup.sh / setup.bat** - Complete automated installation
+- **manage.sh / manage.bat** - Service management and maintenance
+
 ## 📄 License
 
 [Your License Here]
@@ -167,3 +227,4 @@ npm run dev  # in each directory
 ## 👥 Contributors
 
 - Initial implementation team
+```
