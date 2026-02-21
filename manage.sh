@@ -5,7 +5,7 @@
 # Helper script for common operations
 #############################################################################
 
-set -e
+# Don't use 'set -e' to allow graceful error handling
 
 # Colors
 RED='\033[0;31m'
