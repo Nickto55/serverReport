@@ -18,14 +18,20 @@ scp telegram-bot/Dockerfile ${SERVER}:${PROJECT_DIR}/telegram-bot/
 echo "→ Отправка docker-compose.yml..."
 scp docker/docker-compose.yml ${SERVER}:${PROJECT_DIR}/docker/
 
-# Отправляем обновленный setup.sh
-echo "→ Отправка setup.sh..."
+# Отправляем обновленные скрипты
+echo "→ Отправка скриптов..."
 scp setup.sh ${SERVER}:${PROJECT_DIR}/
+scp manage.sh ${SERVER}:${PROJECT_DIR}/
+
+# Делаем скрипты исполняемыми на сервере
+echo "→ Установка прав на выполнение..."
+ssh ${SERVER} "cd ${PROJECT_DIR} && chmod +x setup.sh manage.sh"
 
 echo ""
 echo "✓ Все файлы отправлены!"
 echo ""
 echo "Теперь на сервере выполните:"
-echo "  cd serverReport/docker"
-echo "  docker-compose build"
-echo "  docker-compose up -d"
+echo "  ssh ${SERVER}"
+echo "  cd ${PROJECT_DIR}"
+echo "  sudo ./setup.sh"
+echo ""

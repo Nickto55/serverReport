@@ -123,6 +123,44 @@ install_docker() {
     docker --version
 }
 
+configure_docker_network() {
+    print_header "Configuring Docker Network Settings"
+    
+    # Проверяем существование файла конфигурации
+    if [ -f /etc/docker/daemon.json ]; then
+        print_info "Docker daemon.json already exists, checking settings..."
+        
+        # Проверяем, есть ли DNS настройки
+        if grep -q '"dns"' /etc/docker/daemon.json; then
+            print_success "DNS already configured"
+            return 0
+        fi
+    fi
+    
+    print_info "Configuring Docker DNS and registry mirrors..."
+    
+    # Создаем директорию если не существует
+    mkdir -p /etc/docker
+    
+    # Создаем новый daemon.json с оптимальными настройками
+    cat > /etc/docker/daemon.json <<'EOF'
+{
+  "dns": ["8.8.8.8", "8.8.4.4", "1.1.1.1"],
+  "max-concurrent-downloads": 3
+}
+EOF
+    
+    print_info "Restarting Docker to apply settings..."
+    systemctl restart docker
+    sleep 3
+    
+    if systemctl is-active --quiet docker; then
+        print_success "Docker network configured successfully"
+    else
+        print_warning "Docker restart failed, but continuing..."
+    fi
+}
+
 install_docker_compose_standalone() {
     print_header "Installing Docker Compose Standalone"
     
@@ -234,6 +272,9 @@ main() {
     # Step 2: Install Docker
     install_docker
     
+    # Step 2.5: Configure Docker network settings
+    configure_docker_network
+    
     # Step 3: Install Docker Compose
     install_docker_compose_standalone
     
@@ -332,10 +373,46 @@ main() {
     if [ "$build_images" = "y" ]; then
         cd "$SCRIPT_DIR/docker"
         print_info "Building images (this may take several minutes)..."
-        if ! docker-compose build; then
+        
+        # Попытка сборки с повторами при сетевых ошибках
+        BUILD_SUCCESS=0
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ $BUILD_SUCCESS -eq 0 ]; do
+            if [ $RETRY_COUNT -gt 0 ]; then
+                print_warning "Retry attempt $RETRY_COUNT of $MAX_RETRIES..."
+                sleep 5
+            fi
+            
+            if docker-compose build 2>&1 | tee /tmp/docker_build.log; then
+                BUILD_SUCCESS=1
+            else
+                # Проверяем тип ошибки
+                if grep -q "TLS handshake timeout\|timeout" /tmp/docker_build.log; then
+                    print_warning "Network timeout detected, retrying..."
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                else
+                    # Другая ошибка, не пытаемся повторить
+                    break
+                fi
+            fi
+        done
+        
+        rm -f /tmp/docker_build.log
+        
+        if [ $BUILD_SUCCESS -eq 0 ]; then
             print_error "Failed to build Docker images"
+            echo ""
+            print_warning "Possible solutions:"
+            echo "  1. Check internet connection: ping 8.8.8.8"
+            echo "  2. Restart Docker: systemctl restart docker"
+            echo "  3. Try manually: cd docker && docker-compose build --pull"
+            echo "  4. Re-run this script: ./setup.sh"
+            echo ""
             exit 1
         fi
+        
         print_success "Docker images built successfully"
         cd "$SCRIPT_DIR"
     fi

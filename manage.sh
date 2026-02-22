@@ -240,13 +240,48 @@ view_logs() {
         return 1
     fi
     
+    # Получаем информацию о сервере
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    SERVER_HOSTNAME=$(hostname 2>/dev/null)
+    
+    # Проверяем наличие домена в .env
+    DOMAIN=""
+    if [ -f "$ENV_FILE" ]; then
+        DOMAIN=$(grep "^DOMAIN=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -n1)
+    fi
+    
     if [ -z "$service" ]; then
         clear
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${CYAN}  Логи всех сервисов${NC}"
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-        echo -e "${YELLOW}Нажмите Ctrl+C для выхода${NC}"
         echo ""
+        
+        # Информация о сервере
+        if [ -n "$SERVER_HOSTNAME" ]; then
+            echo -e "${WHITE}Сервер:${NC} ${GREEN}$SERVER_HOSTNAME${NC}"
+        fi
+        if [ -n "$SERVER_IP" ]; then
+            echo -e "${WHITE}IP:${NC} ${CYAN}$SERVER_IP${NC}"
+        fi
+        
+        # Ссылки на сайт
+        echo ""
+        echo -e "${WHITE}Доступ к сайту:${NC}"
+        if [ -n "$DOMAIN" ]; then
+            echo -e "  ${GREEN}●${NC} ${BLUE}http://$DOMAIN:3000${NC} ${YELLOW}(домен)${NC}"
+        fi
+        if [ -n "$SERVER_IP" ]; then
+            echo -e "  ${GREEN}●${NC} ${BLUE}http://$SERVER_IP:3000${NC}"
+        fi
+        echo -e "  ${GREEN}●${NC} ${BLUE}http://localhost:3000${NC} ${CYAN}(локально)${NC}"
+        
+        echo ""
+        echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
+        echo -e "${YELLOW}Нажмите Ctrl+C для выхода${NC}"
+        echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
+        echo ""
+        
         docker-compose logs -f --tail=100
         
         # Пауза после выхода
@@ -258,7 +293,37 @@ view_logs() {
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${CYAN}  Логи сервиса: $service${NC}"
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        
+        # Информация о сервере для конкретного сервиса
+        if [ "$service" = "$SERVICE_WEBSITE" ]; then
+            if [ -n "$SERVER_HOSTNAME" ]; then
+                echo -e "${WHITE}Сервер:${NC} ${GREEN}$SERVER_HOSTNAME${NC}"
+            fi
+            if [ -n "$SERVER_IP" ]; then
+                echo -e "${WHITE}IP:${NC} ${CYAN}$SERVER_IP${NC}"
+            fi
+            
+            echo ""
+            echo -e "${WHITE}Доступ к сайту:${NC}"
+            if [ -n "$DOMAIN" ]; then
+                echo -e "  ${GREEN}●${NC} ${BLUE}http://$DOMAIN:3000${NC} ${YELLOW}(домен)${NC}"
+            fi
+            if [ -n "$SERVER_IP" ]; then
+                echo -e "  ${GREEN}●${NC} ${BLUE}http://$SERVER_IP:3000${NC}"
+            fi
+            echo -e "  ${GREEN}●${NC} ${BLUE}http://localhost:3000${NC} ${CYAN}(локально)${NC}"
+            echo ""
+        elif [ "$service" = "$SERVICE_POSTGRES" ]; then
+            if [ -n "$SERVER_IP" ]; then
+                echo -e "${WHITE}PostgreSQL:${NC} ${CYAN}$SERVER_IP:5432${NC}"
+            fi
+            echo ""
+        fi
+        
+        echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
         echo -e "${YELLOW}Нажмите Ctrl+C для выхода${NC}"
+        echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
         echo ""
         
         # Проверяем, существует ли сервис
