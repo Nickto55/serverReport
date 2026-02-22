@@ -164,7 +164,7 @@ install_dependencies() {
 }
 
 install_nodejs() {
-    print_header "Installing Node.js 18+ (Optional)"
+    print_header "Installing Node.js 20 LTS (Optional)"
     
     if command_exists node; then
         NODE_VERSION=$(node --version)
@@ -172,17 +172,17 @@ install_nodejs() {
         return 0
     fi
     
-    read_input "Install Node.js 18+ for local development? (y/n)" "y" install_node
+    read_input "Install Node.js 20 LTS for local development? (y/n)" "y" install_node
     
     if [ "$install_node" != "y" ]; then
         print_info "Skipping Node.js installation"
         return 0
     fi
     
-    print_info "Installing Node.js 18+..."
+    print_info "Installing Node.js 20 LTS..."
     
-    # Install NodeSource repository
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    # Install NodeSource repository for Node.js 20.x LTS
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y -qq nodejs
     
     print_success "Node.js installed successfully"

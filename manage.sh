@@ -1,393 +1,943 @@
 #!/bin/bash
 
-#############################################################################
-# ServerReport - Management Script
-# Helper script for common operations
-#############################################################################
+# ServerReport Management Panel
+# Панель управления для ServerReport с Docker
 
-# Don't use 'set -e' to allow graceful error handling
-
-# Colors
+# Цвета
 RED='\033[0;31m'
+ORANGE='\033[0;33m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m' # No Color
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-DOCKER_DIR="$SCRIPT_DIR/docker"
+# Пути
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCKER_DIR="$PROJECT_DIR/docker"
+ENV_FILE="$PROJECT_DIR/config/.env"
 
-print_header() {
-    echo -e "\n${BLUE}════════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}════════════════════════════════════════════════════════${NC}\n"
-}
+# Названия сервисов
+SERVICE_WEBSITE="website"
+SERVICE_POSTGRES="postgres"
+SERVICE_DISCORD="discord-bot"
+SERVICE_TELEGRAM="telegram-bot"
 
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-show_help() {
-    echo "ServerReport - Management Script"
-    echo ""
-    echo "Usage: ./manage.sh [command] [options]"
-    echo ""
-    echo "Commands:"
-    echo "  start              - Start all services"
-    echo "  stop               - Stop all services"
-    echo "  restart            - Restart all services"
-    echo "  status             - Show services status"
-    echo "  logs [service]     - Show logs (optional: website|postgres|discord|telegram)"
-    echo "  shell [service]    - Connect to service shell"
-    echo "  build              - Build all Docker images"
-    echo "  rebuild            - Rebuild all Docker images"
-    echo "  clean              - Stop and remove containers (keeps data)"
-    echo "  clean-all          - Stop and remove everything (deletes data!)"
-    echo "  install-deps       - Install npm dependencies locally"
-    echo "  db-shell           - Connect to PostgreSQL"
-    echo "  health-check       - Check services health"
-    echo "  backup-db          - Backup database"
-    echo "  restore-db [file]  - Restore database from backup"
-    echo "  setup              - Run initial setup"
-    echo "  help               - Show this help message"
+# Функция очистки экрана и вывода заголовка
+show_header() {
+    clear
+    echo -e "${WHITE}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${WHITE}║${NC}        ${CYAN}ServerReport Management Panel${NC}                 ${WHITE}║${NC}"
+    echo -e "${WHITE}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
-start_services() {
-    print_header "Starting Services"
-    cd "$DOCKER_DIR"
-    docker-compose up -d
-    print_success "Services started"
-    cd "$SCRIPT_DIR"
-}
-
-stop_services() {
-    print_header "Stopping Services"
-    cd "$DOCKER_DIR"
-    docker-compose down
-    print_success "Services stopped"
-    cd "$SCRIPT_DIR"
-}
-
-restart_services() {
-    print_header "Restarting Services"
-    cd "$DOCKER_DIR"
-    docker-compose restart
-    print_success "Services restarted"
-    cd "$SCRIPT_DIR"
-}
-
-status_services() {
-    print_header "Services Status"
-    cd "$DOCKER_DIR"
-    docker-compose ps
-    cd "$SCRIPT_DIR"
-}
-
-show_logs() {
+# Функция получения статуса Docker сервиса
+get_service_status() {
     local service=$1
-    print_header "Logs"
-    
-    cd "$DOCKER_DIR"
-    
-    if [ -z "$service" ]; then
-        print_info "Showing all logs (Ctrl+C to exit)..."
-        docker-compose logs -f
-    else
-        case $service in
-            website)
-                docker-compose logs -f website
-                ;;
-            postgres|db)
-                docker-compose logs -f postgres
-                ;;
-            discord)
-                docker-compose logs -f discord-bot
-                ;;
-            telegram)
-                docker-compose logs -f telegram-bot
-                ;;
-            *)
-                print_error "Unknown service: $service"
-                echo "Available: website, postgres, discord, telegram"
-                ;;
-        esac
+    if [ ! -f "$DOCKER_DIR/docker-compose.yml" ]; then
+        echo -e "${ORANGE}●${NC} Не настроен"
+        return
     fi
     
-    cd "$SCRIPT_DIR"
+    cd "$DOCKER_DIR" || return
+    
+    if docker-compose ps "$service" 2>/dev/null | grep -q "Up"; then
+        echo -e "${GREEN}●${NC} Запущен"
+    else
+        echo -e "${RED}●${NC} Остановлен"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+}
+
+# Функция проверки Docker
+check_docker() {
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}●${NC} Не установлен"
+        return 1
+    fi
+    
+    if docker ps &> /dev/null; then
+        echo -e "${GREEN}●${NC} Готов"
+        return 0
+    else
+        echo -e "${YELLOW}●${NC} Нет прав"
+        return 1
+    fi
+}
+
+# Главное меню
+show_menu() {
+    show_header
+    
+    echo -e "${WHITE}┌─ Статус сервисов ────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  Docker:        $(check_docker)"
+    echo -e "${WHITE}│${NC}  Website:       $(get_service_status $SERVICE_WEBSITE)"
+    echo -e "${WHITE}│${NC}  PostgreSQL:    $(get_service_status $SERVICE_POSTGRES)"
+    echo -e "${WHITE}│${NC}  Discord Bot:   $(get_service_status $SERVICE_DISCORD)"
+    echo -e "${WHITE}│${NC}  Telegram Bot:  $(get_service_status $SERVICE_TELEGRAM)"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└───────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    echo -e "${WHITE}┌─ Управление ──────────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}1.${NC} Запустить все сервисы"
+    echo -e "${WHITE}│${NC}  ${WHITE}2.${NC} Остановить все сервисы"
+    echo -e "${WHITE}│${NC}  ${WHITE}3.${NC} Перезапустить все сервисы"
+    echo -e "${WHITE}│${NC}  ${WHITE}4.${NC} Показать подробный статус"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}5.${NC} Просмотр логов (все)"
+    echo -e "${WHITE}│${NC}  ${WHITE}6.${NC} Просмотр логов Website"
+    echo -e "${WHITE}│${NC}  ${WHITE}7.${NC} Просмотр логов PostgreSQL"
+    echo -e "${WHITE}│${NC}  ${WHITE}8.${NC} Просмотр логов Discord Bot"
+    echo -e "${WHITE}│${NC}  ${WHITE}9.${NC} Просмотр логов Telegram Bot"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}10.${NC} Подключиться к контейнеру (shell)"
+    echo -e "${WHITE}│${NC}  ${WHITE}11.${NC} Подключиться к PostgreSQL (psql)"
+    echo -e "${WHITE}│${NC}  ${WHITE}12.${NC} Проверка здоровья сервисов"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}13.${NC} Создать резервную копию БД"
+    echo -e "${WHITE}│${NC}  ${WHITE}14.${NC} Восстановить БД из копии"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}15.${NC} Собрать Docker образы"
+    echo -e "${WHITE}│${NC}  ${WHITE}16.${NC} Пересобрать образы (без кеша)"
+    echo -e "${WHITE}│${NC}  ${WHITE}17.${NC} Очистить контейнеры"
+    echo -e "${WHITE}│${NC}  ${WHITE}18.${NC} Полная очистка (удалить всё!)"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}19.${NC} Установить зависимости (npm)"
+    echo -e "${WHITE}│${NC}  ${WHITE}20.${NC} Показать конфигурацию (.env)"
+    echo -e "${WHITE}│${NC}  ${WHITE}21.${NC} Информация о сервисах"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}22.${NC} Обновить проект (git pull)"
+    echo -e "${WHITE}│${NC}  ${WHITE}23.${NC} Запустить полную установку (setup.sh)"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}0.${NC} Выход"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└───────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -n -e "${WHITE}Выберите действие: ${NC}"
+}
+
+# Функции управления
+start_all() {
+    echo -e "${GREEN}Запуск всех сервисов...${NC}"
+    
+    if [ ! -f "$ENV_FILE" ]; then
+        echo -e "${RED}✗ Файл $ENV_FILE не найден${NC}"
+        echo -e "${YELLOW}Запустите сначала: ./setup.sh${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose up -d
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Сервисы запущены${NC}"
+        echo ""
+        echo -e "${CYAN}Сервисы доступны по адресам:${NC}"
+        echo -e "  ${GREEN}●${NC} Website: ${BLUE}http://localhost:3000${NC}"
+        echo -e "  ${GREEN}●${NC} PostgreSQL: ${BLUE}localhost:5432${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при запуске${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    sleep 3
+}
+
+stop_all() {
+    echo -e "${YELLOW}Остановка всех сервисов...${NC}"
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose down
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Сервисы остановлены${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при остановке${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    sleep 2
+}
+
+restart_all() {
+    echo -e "${YELLOW}Перезапуск всех сервисов...${NC}"
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose restart
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Сервисы перезапущены${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при перезапуске${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    sleep 2
+}
+
+show_detailed_status() {
+    show_header
+    echo -e "${BLUE}┌─ Детальный статус ────────────────────────────────────────┐${NC}"
+    echo ""
+    
+    cd "$DOCKER_DIR" || return
+    
+    echo -e "${WHITE}Docker Compose состояние:${NC}"
+    docker-compose ps
+    
+    echo ""
+    echo -e "${WHITE}Использование ресурсов:${NC}"
+    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
+        $(docker-compose ps -q 2>/dev/null)
+    
+    echo ""
+    echo -e "${WHITE}Используемые порты:${NC}"
+    echo -e "  ${GREEN}●${NC} 3000 - Website (HTTP)"
+    echo -e "  ${GREEN}●${NC} 5432 - PostgreSQL"
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+view_logs() {
+    local service=$1
+    
+    # Проверяем наличие Docker
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}✗ Docker не установлен${NC}"
+        sleep 2
+        return 1
+    fi
+    
+    # Проверяем наличие docker-compose.yml
+    if [ ! -f "$DOCKER_DIR/docker-compose.yml" ]; then
+        echo -e "${RED}✗ Файл docker-compose.yml не найден${NC}"
+        echo -e "${YELLOW}Путь: $DOCKER_DIR/docker-compose.yml${NC}"
+        sleep 3
+        return 1
+    fi
+    
+    cd "$DOCKER_DIR" || return
+    
+    # Проверяем, что хотя бы один контейнер запущен
+    if [ -z "$(docker-compose ps -q 2>/dev/null)" ]; then
+        echo -e "${RED}✗ Нет запущенных контейнеров${NC}"
+        echo ""
+        echo -e "${YELLOW}Запустите сервисы: ./manage.sh (выберите пункт 1)${NC}"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
+        cd "$PROJECT_DIR" || return
+        return 1
+    fi
+    
+    if [ -z "$service" ]; then
+        clear
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${CYAN}  Логи всех сервисов${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}Нажмите Ctrl+C для выхода${NC}"
+        echo ""
+        docker-compose logs -f --tail=100
+        
+        # Пауза после выхода
+        echo ""
+        echo -e "${GREEN}Просмотр логов завершен${NC}"
+        read -p "Нажмите Enter для возврата в меню..." -t 2 || true
+    else
+        clear
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${CYAN}  Логи сервиса: $service${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}Нажмите Ctrl+C для выхода${NC}"
+        echo ""
+        
+        # Проверяем, существует ли сервис
+        if ! docker-compose ps "$service" &>/dev/null; then
+            echo -e "${RED}✗ Сервис '$service' не найден${NC}"
+            echo ""
+            echo -e "${WHITE}Доступные сервисы:${NC}"
+            docker-compose ps --services 2>/dev/null || echo "  Нет запущенных сервисов"
+            echo ""
+            sleep 3
+            cd "$PROJECT_DIR" || return
+            return 1
+        fi
+        
+        docker-compose logs -f --tail=100 "$service"
+        
+        # Пауза после выхода
+        echo ""
+        echo -e "${GREEN}Просмотр логов завершен${NC}"
+        read -p "Нажмите Enter для возврата в меню..." -t 2 || true
+    fi
+    
+    cd "$PROJECT_DIR" || return
 }
 
 shell_service() {
-    local service=$1
+    show_header
     
-    if [ -z "$service" ]; then
-        print_error "Please specify service: website, postgres, discord, telegram"
+    # Проверяем Docker
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}✗ Docker не установлен${NC}"
+        read -p "Нажмите Enter для продолжения..."
         return 1
     fi
     
-    print_header "Connecting to $service"
+    # Проверяем docker-compose.yml
+    if [ ! -f "$DOCKER_DIR/docker-compose.yml" ]; then
+        echo -e "${RED}✗ Файл docker-compose.yml не найден${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return 1
+    fi
     
-    cd "$DOCKER_DIR"
+    echo -e "${CYAN}Выберите сервис для подключения:${NC}"
+    echo ""
+    echo -e "  ${WHITE}1.${NC} Website"
+    echo -e "  ${WHITE}2.${NC} PostgreSQL"
+    echo -e "  ${WHITE}3.${NC} Discord Bot"
+    echo -e "  ${WHITE}4.${NC} Telegram Bot"
+    echo -e "  ${WHITE}0.${NC} Отмена"
+    echo ""
+    echo -n -e "${WHITE}Ваш выбор: ${NC}"
+    read service_choice
     
-    case $service in
-        website)
-            docker-compose exec website sh
-            ;;
-        postgres|db)
-            docker-compose exec postgres bash
-            ;;
-        discord)
-            docker-compose exec discord-bot sh
-            ;;
-        telegram)
-            docker-compose exec telegram-bot sh
-            ;;
+    case $service_choice in
+        1) service_name="$SERVICE_WEBSITE" ;;
+        2) service_name="$SERVICE_POSTGRES" ;;
+        3) service_name="$SERVICE_DISCORD" ;;
+        4) service_name="$SERVICE_TELEGRAM" ;;
+        0) return ;;
         *)
-            print_error "Unknown service: $service"
-            echo "Available: website, postgres, discord, telegram"
+            echo -e "${RED}Неверный выбор${NC}"
+            sleep 1
+            return
             ;;
     esac
     
-    cd "$SCRIPT_DIR"
-}
-
-build_images() {
-    print_header "Building Docker Images"
-    cd "$DOCKER_DIR"
-    docker-compose build
-    print_success "Docker images built"
-    cd "$SCRIPT_DIR"
-}
-
-rebuild_images() {
-    print_header "Rebuilding Docker Images"
-    cd "$DOCKER_DIR"
-    docker-compose build --no-cache
-    print_success "Docker images rebuilt"
-    cd "$SCRIPT_DIR"
-}
-
-clean_services() {
-    print_header "Cleaning Services"
-    print_warning "This will stop and remove containers but keep data"
+    cd "$DOCKER_DIR" || return
     
-    cd "$DOCKER_DIR"
-    docker-compose down
-    print_success "Services cleaned"
-    cd "$SCRIPT_DIR"
-}
-
-clean_all() {
-    print_header "Complete Cleanup"
-    print_warning "This will DELETE ALL DATA! Type 'yes' to confirm"
-    
-    read -p "Type 'yes' to continue: " confirm
-    if [ "$confirm" != "yes" ]; then
-        print_info "Cleanup cancelled"
-        return
+    # Проверяем, запущен ли контейнер
+    if ! docker-compose ps "$service_name" 2>/dev/null | grep -q "Up"; then
+        echo ""
+        echo -e "${RED}✗ Контейнер '$service_name' не запущен${NC}"
+        echo ""
+        echo -e "${YELLOW}Запустите сервисы командой: ./manage.sh (выберите пункт 1)${NC}"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
+        cd "$PROJECT_DIR" || return
+        return 1
     fi
     
-    cd "$DOCKER_DIR"
-    docker-compose down -v
-    print_success "All services and data removed"
-    cd "$SCRIPT_DIR"
-}
-
-install_deps() {
-    print_header "Installing Local Dependencies"
+    echo ""
+    echo -e "${GREEN}Подключение к $service_name...${NC}"
+    echo -e "${YELLOW}Для выхода введите 'exit'${NC}"
+    echo ""
     
-    local dirs=("website" "discord-bot" "telegram-bot")
+    # Пробуем bash, если не получается - sh
+    if ! docker-compose exec "$service_name" /bin/bash 2>/dev/null; then
+        docker-compose exec "$service_name" /bin/sh
+    fi
     
-    for dir in "${dirs[@]}"; do
-        if [ -d "$SCRIPT_DIR/$dir" ]; then
-            print_info "Installing dependencies in $dir..."
-            cd "$SCRIPT_DIR/$dir"
-            npm install
-        fi
-    done
-    
-    print_success "Dependencies installed"
-    cd "$SCRIPT_DIR"
+    cd "$PROJECT_DIR" || return
 }
 
 db_shell() {
-    print_header "PostgreSQL Shell"
-    print_info "Type \\q to exit"
+    clear
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  PostgreSQL Shell${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${GREEN}Подключение к PostgreSQL...${NC}"
+    echo -e "${YELLOW}Для выхода введите \\q${NC}"
+    echo ""
     
-    cd "$DOCKER_DIR"
-    
-    # Get DB credentials from .env
-    DB_USER=$(grep "^DB_USER=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    DB_NAME=$(grep "^DB_NAME=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    
-    docker-compose exec postgres psql -U "$DB_USER" -d "$DB_NAME"
-    
-    cd "$SCRIPT_DIR"
-}
-
-health_check() {
-    print_header "Health Check"
-    
-    cd "$DOCKER_DIR"
-    
-    print_info "Checking services..."
-    
-    docker-compose exec -T postgres pg_isready -U serverreport >/dev/null 2>&1 && \
-        print_success "PostgreSQL is healthy" || \
-        print_error "PostgreSQL is not responding"
-    
-    curl -s http://localhost:3000/health >/dev/null 2>&1 && \
-        print_success "Website is healthy" || \
-        print_warning "Website is not responding"
-    
-    docker-compose ps | grep -q "discord-bot.*Up" && \
-        print_success "Discord bot is running" || \
-        print_warning "Discord bot is not running"
-    
-    docker-compose ps | grep -q "telegram-bot.*Up" && \
-        print_success "Telegram bot is running" || \
-        print_warning "Telegram bot is not running"
-    
-    cd "$SCRIPT_DIR"
-}
-
-backup_db() {
-    print_header "Database Backup"
-    
-    local backup_dir="$SCRIPT_DIR/backups"
-    local timestamp=$(date +"%Y%m%d_%H%M%S")
-    local backup_file="$backup_dir/serverreport_$timestamp.sql"
-    
-    if [ ! -d "$backup_dir" ]; then
-        mkdir -p "$backup_dir"
-    fi
-    
-    print_info "Creating backup..."
-    
-    cd "$DOCKER_DIR"
-    
-    DB_USER=$(grep "^DB_USER=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    DB_NAME=$(grep "^DB_NAME=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    
-    docker-compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" > "$backup_file"
-    
-    print_success "Database backed up to: $backup_file"
-    print_info "Backup size: $(du -h "$backup_file" | cut -f1)"
-    
-    cd "$SCRIPT_DIR"
-}
-
-restore_db() {
-    local backup_file=$1
-    
-    if [ -z "$backup_file" ]; then
-        print_error "Please specify backup file"
-        print_info "Usage: ./manage.sh restore-db [backup_file]"
-        return 1
-    fi
-    
-    if [ ! -f "$backup_file" ]; then
-        print_error "Backup file not found: $backup_file"
-        return 1
-    fi
-    
-    print_header "Database Restore"
-    print_warning "This will overwrite your current database! Type 'yes' to confirm"
-    
-    read -p "Type 'yes' to continue: " confirm
-    if [ "$confirm" != "yes" ]; then
-        print_info "Restore cancelled"
+    # Проверяем .env файл
+    if [ ! -f "$ENV_FILE" ]; then
+        echo -e "${RED}✗ Файл $ENV_FILE не найден${NC}"
+        echo -e "${YELLOW}Запустите: ./setup.sh${NC}"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
         return
     fi
     
-    print_info "Restoring database from $backup_file..."
+    # Проверяем Docker
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}✗ Docker не установлен${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
     
-    cd "$DOCKER_DIR"
+    cd "$DOCKER_DIR" || return
     
-    DB_USER=$(grep "^DB_USER=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    DB_NAME=$(grep "^DB_NAME=" "$SCRIPT_DIR/config/.env" | cut -d'=' -f2)
-    
-    docker-compose exec -T postgres psql -U "$DB_USER" "$DB_NAME" < "$backup_file"
-    
-    print_success "Database restored"
-    
-    cd "$SCRIPT_DIR"
-}
-
-setup() {
-    print_info "Running setup script..."
-    "$SCRIPT_DIR/setup.sh"
-}
-
-# Main
-case "${1:-help}" in
-    start)
-        start_services
-        ;;
-    stop)
-        stop_services
-        ;;
-    restart)
-        restart_services
-        ;;
-    status)
-        status_services
-        ;;
-    logs)
-        show_logs "$2"
-        ;;
-    shell)
-        shell_service "$2"
-        ;;
-    build)
-        build_images
-        ;;
-    rebuild)
-        rebuild_images
-        ;;
-    clean)
-        clean_services
-        ;;
-    clean-all)
-        clean_all
-        ;;
-    install-deps)
-        install_deps
-        ;;
-    db-shell)
-        db_shell
-        ;;
-    health-check)
-        health_check
-        ;;
-    backup-db)
-        backup_db
-        ;;
-    restore-db)
-        restore_db "$2"
-        ;;
-    setup)
-        setup
-        ;;
-    help)
-        show_help
-        ;;
-    *)
-        print_error "Unknown command: $1"
+    # Проверяем, запущен ли PostgreSQL
+    if ! docker-compose ps postgres 2>/dev/null | grep -q "Up"; then
+        echo -e "${RED}✗ PostgreSQL контейнер не запущен${NC}"
         echo ""
-        show_help
-        exit 1
-        ;;
-esac
+        echo -e "${YELLOW}Запустите сервисы: ./manage.sh (пункт 1)${NC}"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
+        cd "$PROJECT_DIR" || return
+        return
+    fi
+    
+    # Получаем credentials из .env
+    DB_USER=$(grep "^DB_USER=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    DB_NAME=$(grep "^DB_NAME=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    
+    if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+        echo -e "${RED}✗ Не удалось прочитать DB_USER или DB_NAME из $ENV_FILE${NC}"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
+        cd "$PROJECT_DIR" || return
+        return
+    fi
+    
+    echo -e "${WHITE}Пользователь: ${CYAN}$DB_USER${NC}"
+    echo -e "${WHITE}База данных: ${CYAN}$DB_NAME${NC}"
+    echo ""
+    
+    docker-compose exec postgres psql -U "$DB_USER" -d "$DB_NAME"
+    
+    cd "$PROJECT_DIR" || return
+}
+
+health_check() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Проверка здоровья сервисов${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    cd "$DOCKER_DIR" || return
+    
+    # PostgreSQL
+    echo -n -e "${WHITE}PostgreSQL:${NC} "
+    if docker-compose exec -T postgres pg_isready -U serverreport >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Здоров${NC}"
+    else
+        echo -e "${RED}✗ Не отвечает${NC}"
+    fi
+    
+    # Website
+    echo -n -e "${WHITE}Website:${NC} "
+    if curl -sf http://localhost:3000/health >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Здоров${NC}"
+    else
+        echo -e "${YELLOW}⚠ Не отвечает (может быть не настроен /health endpoint)${NC}"
+    fi
+    
+    # Discord Bot
+    echo -n -e "${WHITE}Discord Bot:${NC} "
+    if docker-compose ps | grep -q "discord-bot.*Up"; then
+        echo -e "${GREEN}✓ Запущен${NC}"
+    else
+        echo -e "${RED}✗ Не запущен${NC}"
+    fi
+    
+    # Telegram Bot
+    echo -n -e "${WHITE}Telegram Bot:${NC} "
+    if docker-compose ps | grep -q "telegram-bot.*Up"; then
+        echo -e "${GREEN}✓ Запущен${NC}"
+    else
+        echo -e "${RED}✗ Не запущен${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+backup_db() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Резервное копирование базы данных${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    if [ ! -f "$ENV_FILE" ]; then
+        echo -e "${RED}✗ Файл $ENV_FILE не найден${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    # Создаем директорию для бэкапов
+    BACKUP_DIR="$PROJECT_DIR/backups"
+    mkdir -p "$BACKUP_DIR"
+    
+    # Генерируем имя файла с датой и временем
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    BACKUP_FILE="$BACKUP_DIR/serverreport_$TIMESTAMP.sql"
+    
+    cd "$DOCKER_DIR" || return
+    
+    # Получаем credentials из .env
+    DB_USER=$(grep "^DB_USER=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    DB_NAME=$(grep "^DB_NAME=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    
+    echo -e "${YELLOW}Создание резервной копии...${NC}"
+    echo -e "${WHITE}Файл: ${CYAN}$BACKUP_FILE${NC}"
+    echo ""
+    
+    if docker-compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" > "$BACKUP_FILE"; then
+        FILE_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+        echo -e "${GREEN}✓ Резервная копия создана${NC}"
+        echo -e "${WHITE}Размер: ${CYAN}$FILE_SIZE${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при создании резервной копии${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+restore_db() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Восстановление базы данных${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    BACKUP_DIR="$PROJECT_DIR/backups"
+    
+    if [ ! -d "$BACKUP_DIR" ] || [ -z "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
+        echo -e "${RED}✗ Резервные копии не найдены${NC}"
+        echo -e "${YELLOW}Директория: $BACKUP_DIR${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    echo -e "${WHITE}Доступные резервные копии:${NC}"
+    echo ""
+    
+    # Показываем список бэкапов
+    local i=1
+    declare -a backups
+    for backup in $(ls -1t "$BACKUP_DIR"/*.sql 2>/dev/null); do
+        backups[$i]="$backup"
+        local size=$(du -h "$backup" | cut -f1)
+        local date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1,2 | cut -d'.' -f1)
+        echo -e "  ${WHITE}$i.${NC} $(basename "$backup") ${CYAN}[$size]${NC} ${YELLOW}($date)${NC}"
+        ((i++))
+    done
+    
+    echo ""
+    echo -n -e "${WHITE}Выберите номер файла (0 - отмена): ${NC}"
+    read backup_choice
+    
+    if [ "$backup_choice" = "0" ] || [ -z "$backup_choice" ]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        sleep 1
+        return
+    fi
+    
+    if [ -z "${backups[$backup_choice]}" ]; then
+        echo -e "${RED}Неверный выбор${NC}"
+        sleep 1
+        return
+    fi
+    
+    BACKUP_FILE="${backups[$backup_choice]}"
+    
+    echo ""
+    echo -e "${RED}ВНИМАНИЕ!${NC} ${YELLOW}Это действие перезапишет текущую базу данных!${NC}"
+    echo -e "${WHITE}Файл для восстановления: ${CYAN}$(basename "$BACKUP_FILE")${NC}"
+    echo ""
+    echo -n -e "${WHITE}Продолжить? Введите 'yes': ${NC}"
+    read confirm
+    
+    if [ "$confirm" != "yes" ]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        sleep 1
+        return
+    fi
+    
+    cd "$DOCKER_DIR" || return
+    
+    # Получаем credentials из .env
+    DB_USER=$(grep "^DB_USER=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    DB_NAME=$(grep "^DB_NAME=" "$ENV_FILE" | cut -d'=' -f2 | tr -d ' ')
+    
+    echo ""
+    echo -e "${YELLOW}Восстановление базы данных...${NC}"
+    
+    if docker-compose exec -T postgres psql -U "$DB_USER" "$DB_NAME" < "$BACKUP_FILE"; then
+        echo -e "${GREEN}✓ База данных восстановлена${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при восстановлении${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+build_images() {
+    echo -e "${CYAN}Сборка Docker образов...${NC}"
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose build
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Образы собраны${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при сборке${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    sleep 2
+}
+
+rebuild_images() {
+    echo -e "${CYAN}Пересборка Docker образов без кеша...${NC}"
+    echo -e "${YELLOW}Это может занять несколько минут${NC}"
+    echo ""
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose build --no-cache
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Образы пересобраны${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при сборке${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    sleep 2
+}
+
+clean_containers() {
+    echo -e "${YELLOW}Очистка контейнеров...${NC}"
+    
+    cd "$DOCKER_DIR" || return
+    docker-compose down
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Контейнеры удалены${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при очистке${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    sleep 2
+}
+
+clean_all() {
+    show_header
+    echo -e "${RED}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  ПОЛНАЯ ОЧИСТКА${NC}"
+    echo -e "${RED}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${RED}ВНИМАНИЕ!${NC} ${YELLOW}Это действие удалит:${NC}"
+    echo -e "  ${RED}●${NC} Все контейнеры"
+    echo -e "  ${RED}●${NC} Все Docker образы проекта"
+    echo -e "  ${RED}●${NC} Все данные (включая базу данных!)"
+    echo ""
+    echo -e "${WHITE}Резервные копии НЕ будут удалены${NC}"
+    echo ""
+    echo -n -e "${WHITE}Продолжить? Введите 'yes': ${NC}"
+    read confirm
+    
+    if [ "$confirm" != "yes" ]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        sleep 1
+        return
+    fi
+    
+    cd "$DOCKER_DIR" || return
+    
+    echo ""
+    echo -e "${YELLOW}Удаление контейнеров, образов и данных...${NC}"
+    docker-compose down -v --rmi all
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Полная очистка завершена${NC}"
+        echo -e "${CYAN}Для повторного запуска выполните: ./setup.sh${NC}"
+    else
+        echo -e "${RED}✗ Ошибка при очистке${NC}"
+    fi
+    
+    cd "$PROJECT_DIR" || return
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+install_deps() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Установка npm зависимостей${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    local services=("website" "discord-bot" "telegram-bot")
+    local success_count=0
+    local fail_count=0
+    
+    for service in "${services[@]}"; do
+        if [ -d "$PROJECT_DIR/$service" ] && [ -f "$PROJECT_DIR/$service/package.json" ]; then
+            echo -e "${YELLOW}Установка зависимостей для $service...${NC}"
+            cd "$PROJECT_DIR/$service" || continue
+            
+            if npm install; then
+                echo -e "${GREEN}✓ $service - зависимости установлены${NC}"
+                ((success_count++))
+            else
+                echo -e "${RED}✗ $service - ошибка установки${NC}"
+                ((fail_count++))
+            fi
+            echo ""
+        fi
+    done
+    
+    cd "$PROJECT_DIR" || return
+    
+    echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
+    echo -e "${WHITE}Успешно: ${GREEN}$success_count${NC}"
+    echo -e "${WHITE}Ошибок: ${RED}$fail_count${NC}"
+    echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+show_config() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Конфигурация проекта${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    if [ ! -f "$ENV_FILE" ]; then
+        echo -e "${RED}✗ Файл $ENV_FILE не найден${NC}"
+        echo -e "${YELLOW}Запустите: ./setup.sh${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    echo -e "${WHITE}Переменные окружения:${NC}"
+    echo ""
+    
+    while IFS='=' read -r key value; do
+        # Пропускаем пустые строки и комментарии
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        
+        # Скрываем чувствительные данные
+        if [[ "$key" =~ (PASSWORD|TOKEN|SECRET|KEY) ]]; then
+            echo -e "  ${YELLOW}$key${NC}=${RED}***hidden***${NC}"
+        else
+            echo -e "  ${YELLOW}$key${NC}=${CYAN}$value${NC}"
+        fi
+    done < "$ENV_FILE"
+    
+    echo ""
+    echo -e "${WHITE}Путь к файлу: ${CYAN}$ENV_FILE${NC}"
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+show_info() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Информация о сервисах${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    echo -e "${WHITE}┌─ Website ──────────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Express.js веб-сервер"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Порт: ${CYAN}3000${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Маршруты: /api, /admin, /auth, /reports"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} JWT аутентификация"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    echo -e "${WHITE}┌─ PostgreSQL ───────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} PostgreSQL 15"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Порт: ${CYAN}5432${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} База данных и хранение данных"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    echo -e "${WHITE}┌─ Discord Bot ──────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Discord.js v14"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Команды: /report, /status"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Интеграция с серверными отчетами"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    echo -e "${WHITE}┌─ Telegram Bot ─────────────────────────────────────────┐${NC}"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Telegraf"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Автоматизированные отчеты"
+    echo -e "${WHITE}│${NC}  ${GREEN}●${NC} Telegram интеграция"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}└────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    read -p "Нажмите Enter для продолжения..."
+}
+
+update_project() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Обновление проекта из Git${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    if ! command -v git &> /dev/null; then
+        echo -e "${RED}✗ Git не установлен${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    if [ ! -d "$PROJECT_DIR/.git" ]; then
+        echo -e "${RED}✗ Это не git репозиторий${NC}"
+        echo -e "${YELLOW}Обновление через git недоступно${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    CURRENT_BRANCH=$(git branch --show-current)
+    echo -e "${WHITE}Текущая ветка: ${CYAN}$CURRENT_BRANCH${NC}"
+    echo -e "${WHITE}Последний коммит:${NC}"
+    git log -1 --oneline --color
+    echo ""
+    
+    # Проверка изменений
+    if [ -n "$(git status --porcelain)" ]; then
+        echo -e "${YELLOW}⚠ Обнаружены локальные изменения:${NC}"
+        git status --short
+        echo ""
+        echo -n -e "${WHITE}Продолжить? Изменения могут быть потеряны (y/n): ${NC}"
+        read confirm
+        if [[ ! $confirm =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            sleep 1
+            return
+        fi
+    fi
+    
+    echo -e "${YELLOW}Проверка обновлений...${NC}"
+    git fetch origin
+    
+    if [ -n "$(git log HEAD..origin/$CURRENT_BRANCH --oneline)" ]; then
+        echo -e "${GREEN}Доступные обновления:${NC}"
+        git log HEAD..origin/$CURRENT_BRANCH --oneline --decorate --color
+        echo ""
+        
+        echo -n -e "${WHITE}Применить обновления? (y/n): ${NC}"
+        read confirm
+        
+        if [[ $confirm =~ ^[Yy]$ ]]; then
+            # Останавливаем сервисы
+            echo -e "${YELLOW}Остановка сервисов...${NC}"
+            cd "$DOCKER_DIR" && docker-compose down
+            cd "$PROJECT_DIR" || return
+            
+            # Обновляем
+            echo -e "${YELLOW}Обновление кода...${NC}"
+            git pull origin $CURRENT_BRANCH
+            
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}✓ Проект обновлен${NC}"
+                
+                # Пересборка образов
+                echo -e "${YELLOW}Пересборка Docker образов...${NC}"
+                cd "$DOCKER_DIR" && docker-compose build
+                
+                # Запуск сервисов
+                echo -e "${YELLOW}Запуск сервисов...${NC}"
+                docker-compose up -d
+                cd "$PROJECT_DIR" || return
+                
+                echo -e "${GREEN}✓ Обновление завершено${NC}"
+            else
+                echo -e "${RED}✗ Ошибка при обновлении${NC}"
+            fi
+        else
+            echo -e "${YELLOW}Отменено${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ Проект уже актуален${NC}"
+    fi
+    
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+run_setup() {
+    show_header
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Запуск полной установки${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    if [ ! -f "$PROJECT_DIR/setup.sh" ]; then
+        echo -e "${RED}✗ Файл setup.sh не найден${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    echo -e "${YELLOW}Запуск setup.sh...${NC}"
+    echo ""
+    
+    bash "$PROJECT_DIR/setup.sh"
+    
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+# Основной цикл
+while true; do
+    show_menu
+    read choice
+    
+    case $choice in
+        1) start_all ;;
+        2) stop_all ;;
+        3) restart_all ;;
+        4) show_detailed_status ;;
+        5) view_logs "" ;;
+        6) view_logs "$SERVICE_WEBSITE" ;;
+        7) view_logs "$SERVICE_POSTGRES" ;;
+        8) view_logs "$SERVICE_DISCORD" ;;
+        9) view_logs "$SERVICE_TELEGRAM" ;;
+        10) shell_service ;;
+        11) db_shell ;;
+        12) health_check ;;
+        13) backup_db ;;
+        14) restore_db ;;
+        15) build_images ;;
+        16) rebuild_images ;;
+        17) clean_containers ;;
+        18) clean_all ;;
+        19) install_deps ;;
+        20) show_config ;;
+        21) show_info ;;
+        22) update_project ;;
+        23) run_setup ;;
+        0)
+            echo -e "${GREEN}Выход...${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Неверный выбор${NC}"
+            sleep 1
+            ;;
+    esac
+done
