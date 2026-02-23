@@ -2,11 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY website/package*.json ./
 
 RUN npm install --production
 
-COPY . .
+COPY website/ .
+
+# Копируем статические файлы сайта из submodule в public
+COPY siteEMB/public ./public
 
 EXPOSE 3000
 

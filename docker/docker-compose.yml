@@ -21,8 +21,8 @@ services:
 
   website:
     build:
-      context: ../website
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: website/Dockerfile
     container_name: serverreport-website
     environment:
       DATABASE_URL: postgresql://${DB_USER:-serverreport}:${DB_PASSWORD:-serverreport_pass}@postgres:5432/${DB_NAME:-serverreport}
@@ -37,6 +37,7 @@ services:
       - serverreport-network
     volumes:
       - ../website:/app
+      - ../siteEMB/public:/app/public
       - /app/node_modules
 
   discord-bot:
