@@ -29,7 +29,7 @@ SERVICE_TELEGRAM="telegram-bot"
 show_header() {
     clear
     echo -e "${WHITE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${WHITE}║${NC}        ${CYAN}ServerReport Management Panel${NC}                 ${WHITE}║${NC}"
+    echo -e "${WHITE}║${NC}        ${WHITE}ServerReport Management Panel${NC}                 ${WHITE}   ║${NC}"
     echo -e "${WHITE}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -115,6 +115,8 @@ show_menu() {
     echo -e "${WHITE}│${NC}"
     echo -e "${WHITE}│${NC}  ${WHITE}22.${NC} Обновить проект (git pull)"
     echo -e "${WHITE}│${NC}  ${WHITE}23.${NC} Запустить полную установку (setup.sh)"
+    echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}24.${NC} Настроить проект сайта (Git)"
     echo -e "${WHITE}│${NC}"
     echo -e "${WHITE}│${NC}  ${WHITE}0.${NC} Выход"
     echo -e "${WHITE}│${NC}"
@@ -967,6 +969,16 @@ run_setup() {
     read -p "Нажмите Enter для продолжения..."
 }
 
+setup_website_from_git() {
+    if [ ! -f "$PROJECT_DIR/website/setup_website.sh" ]; then
+        echo -e "${RED}✗ Файл website/setup_website.sh не найден${NC}"
+        read -p "Нажмите Enter для продолжения..."
+        return
+    fi
+    
+    bash "$PROJECT_DIR/website/setup_website.sh"
+}
+
 # Основной цикл
 while true; do
     show_menu
@@ -996,6 +1008,7 @@ while true; do
         21) show_info ;;
         22) update_project ;;
         23) run_setup ;;
+        24) setup_website_from_git ;;
         0)
             echo -e "${GREEN}Выход...${NC}"
             exit 0
