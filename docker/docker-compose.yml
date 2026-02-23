@@ -48,10 +48,6 @@ services:
         condition: service_healthy
     networks:
       - serverreport-network
-    volumes:
-      - ../website:/app
-      - ../siteEMB/public:/app/public
-      - /app/node_modules
 
   discord-bot:
     build:
@@ -67,9 +63,6 @@ services:
         condition: service_healthy
     networks:
       - serverreport-network
-    volumes:
-      - ../discord-bot:/app
-      - /app/node_modules
 
   telegram-bot:
     build:
@@ -85,9 +78,6 @@ services:
         condition: service_healthy
     networks:
       - serverreport-network
-    volumes:
-      - ../telegram-bot:/app
-      - /app/node_modules
 
 volumes:
   postgres_data:

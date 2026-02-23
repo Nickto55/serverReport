@@ -13,14 +13,19 @@ const reportsRoutes = require('./routes/reports');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Безопасность - Helmet (настроено для работы с inline скриптами)
+// Безопасность - Helmet (настроено для работы с inline скриптами и внешними ресурсами)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "https:", "wss:"],
+      fontSrc: ["'self'", "data:", "https:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'self'"],
     }
   }
 }));
@@ -94,17 +99,74 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Раздача статических файлов - ДОЛЖНА БЫТЬ ДО SPA FALLBACK!
-app.use(express.static(path.join(__dirname, 'public')));
+// Debug endpoint - показывает структуру public директории
+app.get('/api/debug/public-files', (req, res) => {
+  const fs = require('fs');
+  const publicPath = path.join(__dirname, 'public');
+  
+  function getFiles(dir, prefix = '') {
+    const files = [];
+    try {
+      const items = fs.readdirSync(dir);
+      items.forEach(item => {
+        const fullPath = path.join(dir, item);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          files.push({ type: 'dir', path: prefix + item + '/' });
+          files.push(...getFiles(fullPath, prefix + item + '/'));
+        } else {
+          files.push({ type: 'file', path: prefix + item, size: stat.size });
+        }
+      });
+    } catch (err) {
+      files.push({ type: 'error', path: prefix, error: err.message });
+    }
+    return files;
+  }
+  
+  res.json({
+    publicPath: publicPath,
+    files: getFiles(publicPath)
+  });
+});
 
-// SPA fallback - для всех остальных маршрутов иди в index.html
+// Раздача статических файлов - ДОЛЖНА БЫТЬ ДО SPA FALLBACK!
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    } else if (filePath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    }
+  }
+}));
+
+// SPA fallback - для всех остальных маршрутов иди в главный HTML файл
 // ВАЖНО: это должно быть ПОСЛЕ всех /api маршрутов и статических файлов!
+const mainHtmlFile = process.env.MAIN_HTML || 'index.html';
+
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const filePath = path.join(__dirname, 'public', mainHtmlFile);
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      res.status(404).json({ 
+        error: 'Главная страница не найдена', 
+        message: `Файл ${mainHtmlFile} отсутствует в директории public/` 
+      });
+    }
+  });
 });
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const filePath = path.join(__dirname, 'public', mainHtmlFile);
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      res.status(404).json({ 
+        error: 'Страница не найдена', 
+        message: `Файл ${mainHtmlFile} отсутствует в директории public/` 
+      });
+    }
+  });
 });
 
 // 404 обработчик для POST/PUT/DELETE (эти методы не поймают SPA fallback)

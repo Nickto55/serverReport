@@ -2,16 +2,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Копируем только package.json и package-lock.json
 COPY website/package*.json ./
 
+# Устанавливаем зависимости
 RUN npm cache clean --force && npm install --production --legacy-peer-deps
 
-# Копируем все файлы website кроме public папки
-COPY website/ .
-RUN rm -rf ./public/*
+# Копируем файлы приложения (без node_modules благодаря .dockerignore)
+COPY website/server.js website/db.js ./
+COPY website/routes ./routes
+COPY website/middleware ./middleware
 
-# Копируем статические файлы сайта из siteEMB
-COPY siteEMB/public ./public
+# Копируем директорию public (должна существовать, даже если пустая)
+COPY website/public ./public
 
 EXPOSE 3000
 

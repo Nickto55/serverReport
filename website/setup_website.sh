@@ -749,6 +749,17 @@ setup_env() {
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     
+    # Запрос имени главного файла
+    echo -e "${WHITE}Укажите имя главного HTML файла в директории public/${NC}"
+    echo -n -e "${WHITE}Главный файл (по умолчанию 'index.html'): ${NC}"
+    read main_html_file
+    
+    if [ -z "$main_html_file" ]; then
+        main_html_file="index.html"
+    fi
+    
+    echo ""
+    
     if [ ! -f "$WEBSITE_DIR/.env" ]; then
         echo -e "${YELLOW}Создание .env файла...${NC}"
         
@@ -756,6 +767,7 @@ setup_env() {
 # Server Configuration
 PORT=3000
 NODE_ENV=production
+MAIN_HTML=$main_html_file
 
 # Database Configuration
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/serverreport
@@ -769,10 +781,15 @@ CORS_ORIGIN=*
 EOF
         
         echo -e "${GREEN}✓ Файл .env создан${NC}"
-        echo -e "${YELLOW}Отредактируйте $WEBSITE_DIR/.env для изменения настроек${NC}"
     else
         echo -e "${YELLOW}Файл .env уже существует${NC}"
     fi
+    
+    echo ""
+    echo -e "${YELLOW}Главный файл установлен: ${CYAN}$main_html_file${NC}"
+    echo -e "${YELLOW}Разместите статические файлы в ${CYAN}$WEBSITE_DIR/public/${NC}"
+    echo ""
+    echo -e "${YELLOW}Отредактируйте $WEBSITE_DIR/.env для изменения настроек${NC}"
 }
 
 # Основная функция
@@ -878,8 +895,12 @@ main() {
     echo ""
     echo -e "${WHITE}Следующие шаги:${NC}"
     echo -e "  1. Проверьте конфигурацию в ${BLUE}$WEBSITE_DIR/.env${NC}"
-    echo -e "  2. Запустите сервисы через ${BLUE}$PROJECT_DIR/manage.sh${NC}"
-    echo -e "  3. Проверьте работу сайта на ${BLUE}http://localhost:3000${NC}"
+    echo -e "  2. Разместите статические файлы (HTML/CSS/JS) в ${BLUE}$WEBSITE_DIR/public/${NC}"
+    echo -e "  3. Пересоберите Docker контейнер:"
+    echo -e "     ${BLUE}cd $PROJECT_DIR/docker${NC}"
+    echo -e "     ${BLUE}docker-compose build --no-cache website${NC}"
+    echo -e "     ${BLUE}docker-compose up -d${NC}"
+    echo -e "  4. Проверьте работу сайта на ${BLUE}http://localhost${NC}"
     echo ""
     
     read -p "Нажмите Enter для выхода..."
