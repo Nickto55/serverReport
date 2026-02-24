@@ -118,6 +118,8 @@ show_menu() {
     echo -e "${WHITE}│${NC}"
     echo -e "${WHITE}│${NC}  ${WHITE}24.${NC} Настроить проект сайта (Git)"
     echo -e "${WHITE}│${NC}"
+    echo -e "${WHITE}│${NC}  ${WHITE}25.${NC} Управление доменом и SSL сертификатом"
+    echo -e "${WHITE}│${NC}"
     echo -e "${WHITE}│${NC}  ${WHITE}0.${NC} Выход"
     echo -e "${WHITE}│${NC}"
     echo -e "${WHITE}└───────────────────────────────────────────────────────────┘${NC}"
@@ -979,6 +981,285 @@ setup_website_from_git() {
     bash "$PROJECT_DIR/website/setup_website.sh"
 }
 
+manage_domain_ssl() {
+    while true; do
+        show_header
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${CYAN}  Управление доменом и SSL сертификатом${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "${WHITE}┌─ Действия ─────────────────────────────────────────────┐${NC}"
+        echo -e "${WHITE}│${NC}"
+        echo -e "${WHITE}│${NC}  ${WHITE}1.${NC} Настроить домен в nginx"
+        echo -e "${WHITE}│${NC}  ${WHITE}2.${NC} Установить certbot"
+        echo -e "${WHITE}│${NC}  ${WHITE}3.${NC} Получить SSL сертификат (Let's Encrypt)"
+        echo -e "${WHITE}│${NC}  ${WHITE}4.${NC} Обновить SSL сертификат"
+        echo -e "${WHITE}│${NC}  ${WHITE}5.${NC} Показать статус сертификата"
+        echo -e "${WHITE}│${NC}  ${WHITE}6.${NC} Автообновление сертификатов (cron)"
+        echo -e "${WHITE}│${NC}"
+        echo -e "${WHITE}│${NC}  ${WHITE}0.${NC} Назад в главное меню"
+        echo -e "${WHITE}│${NC}"
+        echo -e "${WHITE}└────────────────────────────────────────────────────────┘${NC}"
+        echo ""
+        echo -n -e "${WHITE}Выберите действие: ${NC}"
+        read ssl_choice
+        
+        case $ssl_choice in
+            1)
+                # Настройка домена
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Настройка домена${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                echo -n -e "${WHITE}Введите ваш домен (например, example.com): ${NC}"
+                read domain
+                
+                if [ -z "$domain" ]; then
+                    echo -e "${RED}✗ Домен не может быть пустым${NC}"
+                    sleep 2
+                    continue
+                fi
+                
+                NGINX_CONF="$PROJECT_DIR/docker/nginx/nginx.conf"
+                
+                if [ ! -f "$NGINX_CONF" ]; then
+                    echo -e "${RED}✗ Файл nginx.conf не найден${NC}"
+                    read -p "Нажмите Enter для продолжения..."
+                    continue
+                fi
+                
+                # Создаём резервную копию
+                cp "$NGINX_CONF" "$NGINX_CONF.backup.$(date +%s)"
+                echo -e "${GREEN}✓ Создана резервная копия конфигурации${NC}"
+                
+                # Обновляем server_name в конфигурации
+                sed -i "s/server_name localhost;/server_name $domain www.$domain;/g" "$NGINX_CONF"
+                
+                echo -e "${GREEN}✓ Домен $domain настроен в nginx.conf${NC}"
+                echo -e "${YELLOW}Перезапустите nginx для применения изменений${NC}"
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            2)
+                # Установка certbot
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Установка Certbot${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                if command -v certbot &> /dev/null; then
+                    echo -e "${GREEN}✓ Certbot уже установлен${NC}"
+                    certbot --version
+                else
+                    echo -e "${YELLOW}Установка certbot...${NC}"
+                    
+                    # Определяем систему и устанавливаем certbot
+                    if [ -f /etc/debian_version ]; then
+                        sudo apt-get update
+                        sudo apt-get install -y certbot python3-certbot-nginx
+                    elif [ -f /etc/redhat-release ]; then
+                        sudo yum install -y certbot python3-certbot-nginx
+                    else
+                        echo -e "${RED}✗ Неподдерживаемая система${NC}"
+                        echo -e "${YELLOW}Установите certbot вручную${NC}"
+                        read -p "Нажмите Enter для продолжения..."
+                        continue
+                    fi
+                    
+                    if [ $? -eq 0 ]; then
+                        echo -e "${GREEN}✓ Certbot успешно установлен${NC}"
+                    else
+                        echo -e "${RED}✗ Ошибка установки certbot${NC}"
+                    fi
+                fi
+                
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            3)
+                # Получение SSL сертификата
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Получение SSL сертификата${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                if ! command -v certbot &> /dev/null; then
+                    echo -e "${RED}✗ Certbot не установлен${NC}"
+                    echo -e "${YELLOW}Сначала установите certbot (опция 2)${NC}"
+                    read -p "Нажмите Enter для продолжения..."
+                    continue
+                fi
+                
+                echo -n -e "${WHITE}Введите ваш домен: ${NC}"
+                read domain
+                
+                if [ -z "$domain" ]; then
+                    echo -e "${RED}✗ Домен не может быть пустым${NC}"
+                    sleep 2
+                    continue
+                fi
+                
+                echo -n -e "${WHITE}Введите email для уведомлений: ${NC}"
+                read email
+                
+                if [ -z "$email" ]; then
+                    echo -e "${RED}✗ Email не может быть пустым${NC}"
+                    sleep 2
+                    continue
+                fi
+                
+                echo ""
+                echo -e "${YELLOW}Важно:${NC}"
+                echo -e "  1. Убедитесь что домен $domain указывает на этот сервер"
+                echo -e "  2. Порты 80 и 443 должны быть открыты"
+                echo -e "  3. Nginx должен быть запущен"
+                echo ""
+                echo -n -e "${WHITE}Продолжить? (y/n): ${NC}"
+                read confirm
+                
+                if [[ ! $confirm =~ ^[Yy]$ ]]; then
+                    echo -e "${YELLOW}Отменено${NC}"
+                    sleep 1
+                    continue
+                fi
+                
+                echo ""
+                echo -e "${YELLOW}Получение сертификата...${NC}"
+                
+                # Для Docker окружения используем standalone режим
+                cd "$DOCKER_DIR" || continue
+                docker-compose stop nginx
+                
+                sudo certbot certonly --standalone \
+                    --preferred-challenges http \
+                    -d "$domain" -d "www.$domain" \
+                    --email "$email" \
+                    --agree-tos \
+                    --non-interactive
+                
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}✓ Сертификат успешно получен${NC}"
+                    echo ""
+                    echo -e "${CYAN}Путь к сертификатам:${NC}"
+                    echo -e "  ${WHITE}Certificate:${NC} /etc/letsencrypt/live/$domain/fullchain.pem"
+                    echo -e "  ${WHITE}Private Key:${NC} /etc/letsencrypt/live/$domain/privkey.pem"
+                    echo ""
+                    echo -e "${YELLOW}Обновите nginx.conf для использования этих сертификатов${NC}"
+                else
+                    echo -e "${RED}✗ Ошибка получения сертификата${NC}"
+                fi
+                
+                docker-compose start nginx
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            4)
+                # Обновление сертификата
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Обновление SSL сертификата${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                if ! command -v certbot &> /dev/null; then
+                    echo -e "${RED}✗ Certbot не установлен${NC}"
+                    read -p "Нажмите Enter для продолжения..."
+                    continue
+                fi
+                
+                echo -e "${YELLOW}Проверка и обновление сертификатов...${NC}"
+                echo ""
+                
+                cd "$DOCKER_DIR" || continue
+                docker-compose stop nginx
+                
+                sudo certbot renew
+                
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}✓ Сертификаты обновлены${NC}"
+                else
+                    echo -e "${YELLOW}Обновление не требуется или произошла ошибка${NC}"
+                fi
+                
+                docker-compose start nginx
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            5)
+                # Статус сертификата
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Статус SSL сертификатов${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                if ! command -v certbot &> /dev/null; then
+                    echo -e "${RED}✗ Certbot не установлен${NC}"
+                    read -p "Нажмите Enter для продолжения..."
+                    continue
+                fi
+                
+                sudo certbot certificates
+                
+                echo ""
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            6)
+                # Автообновление через cron
+                show_header
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${CYAN}  Автообновление сертификатов${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                
+                if ! command -v certbot &> /dev/null; then
+                    echo -e "${RED}✗ Certbot не установлен${NC}"
+                    read -p "Нажмите Enter для продолжения..."
+                    continue
+                fi
+                
+                echo -e "${YELLOW}Настройка автоматического обновления сертификатов...${NC}"
+                echo ""
+                
+                # Создаём скрипт обновления
+                RENEW_SCRIPT="/usr/local/bin/renew-certs.sh"
+                sudo tee "$RENEW_SCRIPT" > /dev/null <<EOF
+#!/bin/bash
+cd "$DOCKER_DIR"
+docker-compose stop nginx
+certbot renew --quiet
+docker-compose start nginx
+EOF
+                
+                sudo chmod +x "$RENEW_SCRIPT"
+                echo -e "${GREEN}✓ Создан скрипт обновления: $RENEW_SCRIPT${NC}"
+                
+                # Добавляем в cron (проверка дважды в день)
+                CRON_JOB="0 0,12 * * * $RENEW_SCRIPT"
+                
+                (sudo crontab -l 2>/dev/null | grep -v "$RENEW_SCRIPT"; echo "$CRON_JOB") | sudo crontab -
+                
+                echo -e "${GREEN}✓ Добавлено задание cron${NC}"
+                echo -e "${CYAN}Сертификаты будут проверяться дважды в день (00:00 и 12:00)${NC}"
+                echo ""
+                
+                echo -e "${WHITE}Текущие задания cron:${NC}"
+                sudo crontab -l | grep certbot || sudo crontab -l | grep renew-certs
+                
+                echo ""
+                read -p "Нажмите Enter для продолжения..."
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Неверный выбор${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 # Основной цикл
 while true; do
     show_menu
@@ -1009,6 +1290,7 @@ while true; do
         22) update_project ;;
         23) run_setup ;;
         24) setup_website_from_git ;;
+        25) manage_domain_ssl ;;
         0)
             echo -e "${GREEN}Выход...${NC}"
             exit 0

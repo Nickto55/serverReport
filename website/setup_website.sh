@@ -294,6 +294,30 @@ update_project() {
     echo -e "${YELLOW}Текущий репозиторий:${NC}"
     git remote -v | head -n 1
     echo ""
+
+    if ! git remote get-url origin > /dev/null 2>&1; then
+        echo -e "${RED}✗ Не найден remote 'origin'${NC}"
+        echo -e "${YELLOW}Невозможно обновить проект через git pull${NC}"
+        cd "$PROJECT_DIR" || return
+        return 1
+    fi
+
+    # Определение актуальной ветки для обновления
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -z "$current_branch" ] || [ "$current_branch" = "HEAD" ]; then
+        current_branch=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+        if [ -z "$current_branch" ]; then
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+                current_branch="main"
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+                current_branch="master"
+            else
+                current_branch="main"
+            fi
+        fi
+        echo -e "${YELLOW}⚠ Определена удаленная ветка по умолчанию: ${CYAN}$current_branch${NC}"
+    fi
     
     # Сохранение изменений в .env если есть
     local env_changed=0
@@ -322,8 +346,25 @@ update_project() {
     # Получение обновлений
     echo ""
     echo -e "${YELLOW}Получение обновлений из репозитория...${NC}"
-    
-    if git pull; then
+
+    if ! git fetch --all --prune; then
+        echo -e "${RED}✗ Ошибка при получении обновлений (git fetch)${NC}"
+        cd "$PROJECT_DIR" || return
+        return 1
+    fi
+
+    if git show-ref --verify --quiet "refs/remotes/origin/$current_branch"; then
+        if git show-ref --verify --quiet "refs/heads/$current_branch"; then
+            git checkout "$current_branch" > /dev/null 2>&1
+        else
+            git checkout -B "$current_branch" "origin/$current_branch" > /dev/null 2>&1
+        fi
+        if ! git rev-parse --abbrev-ref --symbolic-full-name "@{u}" > /dev/null 2>&1; then
+            git branch --set-upstream-to="origin/$current_branch" "$current_branch" > /dev/null 2>&1 || true
+        fi
+    fi
+
+    if git pull --rebase --autostash origin "$current_branch"; then
         echo -e "${GREEN}✓ Проект успешно обновлен${NC}"
         
         # Проверка изменений в package.json
@@ -344,16 +385,8 @@ update_project() {
             fi
         fi
         
-        # Предложение перезапустить контейнеры
-        echo ""
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}✓ Обновление завершено успешно!${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "${WHITE}Рекомендуется перезапустить контейнеры:${NC}"
-        echo -e "  ${BLUE}cd $PROJECT_DIR/docker${NC}"
-        echo -e "  ${BLUE}docker-compose restart website${NC}"
-        echo ""
+        # Пересборка и перезапуск контейнеров
+        rebuild_and_restart_containers
         
         cd "$PROJECT_DIR" || return
         return 0
@@ -673,20 +706,21 @@ copy_project() {
     echo -e "${YELLOW}Копирование файлов проекта...${NC}"
     
     # Сохраняем файлы, которые не нужно удалять
-    local preserve_files=("setup_website.sh" "WEBSITE.md" ".env")
-    
-    # Удаляем все файлы кроме сохраняемых
-    for file in "$WEBSITE_DIR"/*; do
+    local preserve_files=("setup_website.sh" "WEBSITE.md" ".env" "README.md")
+
+    # Удаляем все файлы кроме сохраняемых (включая скрытые)
+    for file in "$WEBSITE_DIR"/* "$WEBSITE_DIR"/.[!.]* "$WEBSITE_DIR"/..?*; do
+        [ -e "$file" ] || continue
         filename=$(basename "$file")
         local should_delete=1
-        
+
         for preserve in "${preserve_files[@]}"; do
             if [ "$filename" = "$preserve" ]; then
                 should_delete=0
                 break
             fi
         done
-        
+
         if [ $should_delete -eq 1 ]; then
             rm -rf "$file"
         fi
@@ -706,6 +740,51 @@ copy_project() {
     rm -rf "$TEMP_DIR"
     
     return 0
+}
+
+# Функция пересборки и перезапуска контейнеров
+rebuild_and_restart_containers() {
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Пересборка и перезапуск контейнеров${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    if ! command -v docker-compose > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ docker-compose не найден, пропуск перезапуска${NC}"
+        return 0
+    fi
+
+    if [ ! -d "$PROJECT_DIR/docker" ]; then
+        echo -e "${YELLOW}⚠ Папка docker не найдена, пропуск перезапуска${NC}"
+        return 0
+    fi
+
+    echo -n -e "${WHITE}Пересобрать и перезапустить website и nginx? (y/n): ${NC}"
+    read restart_confirm
+
+    if [[ $restart_confirm =~ ^[Yy]$ ]]; then
+        cd "$PROJECT_DIR/docker" || return 1
+
+        echo -e "${YELLOW}Пересборка контейнеров...${NC}"
+        if ! docker-compose build --no-cache website nginx; then
+            echo -e "${RED}✗ Ошибка при пересборке контейнеров${NC}"
+            cd "$PROJECT_DIR" || return
+            return 1
+        fi
+
+        echo -e "${YELLOW}Перезапуск контейнеров...${NC}"
+        if ! docker-compose up -d --force-recreate website nginx; then
+            echo -e "${RED}✗ Ошибка при перезапуске контейнеров${NC}"
+            cd "$PROJECT_DIR" || return
+            return 1
+        fi
+
+        echo -e "${GREEN}✓ Контейнеры website и nginx перезапущены${NC}"
+        cd "$PROJECT_DIR" || return
+    else
+        echo -e "${YELLOW}Перезапуск контейнеров пропущен${NC}"
+    fi
 }
 
 # Функция установки зависимостей
@@ -886,6 +965,9 @@ main() {
     
     # Настройка .env
     setup_env
+
+    # Пересборка и перезапуск контейнеров
+    rebuild_and_restart_containers
     
     # Завершение
     echo ""
@@ -896,11 +978,7 @@ main() {
     echo -e "${WHITE}Следующие шаги:${NC}"
     echo -e "  1. Проверьте конфигурацию в ${BLUE}$WEBSITE_DIR/.env${NC}"
     echo -e "  2. Разместите статические файлы (HTML/CSS/JS) в ${BLUE}$WEBSITE_DIR/public/${NC}"
-    echo -e "  3. Пересоберите Docker контейнер:"
-    echo -e "     ${BLUE}cd $PROJECT_DIR/docker${NC}"
-    echo -e "     ${BLUE}docker-compose build --no-cache website${NC}"
-    echo -e "     ${BLUE}docker-compose up -d${NC}"
-    echo -e "  4. Проверьте работу сайта на ${BLUE}http://localhost${NC}"
+    echo -e "  3. Проверьте работу сайта на ${BLUE}http://localhost${NC}"
     echo ""
     
     read -p "Нажмите Enter для выхода..."
